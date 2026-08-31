@@ -1,0 +1,95 @@
+/* =================================
+   CALENDAR SUMMARY
+================================= */
+
+.calendar-summary {
+  background: white;
+
+  border: 1px solid #e5e7eb;
+
+  border-radius: 12px;
+
+  padding: 18px 22px;
+
+  margin-bottom: 20px;
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 18px;
+
+  box-shadow:
+    0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+
+.summary-icon {
+  width: 50px;
+
+  height: 50px;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  border-radius: 10px;
+
+  background: #eef2ff;
+
+  font-size: 25px;
+}
+
+
+.summary-content {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+
+.summary-content span {
+  color: #6b7280;
+
+  font-size: 14px;
+
+  font-weight: 500;
+}
+
+
+.summary-content strong {
+  color: #111827;
+
+  font-size: 28px;
+
+  line-height: 1;
+}
+
+
+/* =================================
+   RESPONSIVE SUMMARY
+================================= */
+
+@media (max-width: 600px) {
+
+  .calendar-summary {
+    padding: 15px;
+  }
+
+  .summary-icon {
+    width: 44px;
+
+    height: 44px;
+
+    font-size: 21px;
+  }
+
+  .summary-content strong {
+    font-size: 24px;
+  }
+
+}
