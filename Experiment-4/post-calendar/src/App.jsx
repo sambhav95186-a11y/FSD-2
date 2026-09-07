@@ -1,460 +1,1987 @@
-import { useState, useCallback } from "react";
-import Calendar from "./Calendar";
-import PostForm from "./PostForm";
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  memo,
+  useEffect,
+} from "react";
+
 import "./App.css";
 
-function App() {
-  // Calendar entries
-  const [calendarEntries, setCalendarEntries] = useState([
-    {
-      id: "1",
-      title: "Product Launch",
-      date: "2026-09-02T10:00:00",
-      platform: "Instagram",
-      description: "Product launch announcement.",
-    },
-    {
-      id: "2",
-      title: "Company Update",
-      date: "2026-09-04T14:00:00",
-      platform: "LinkedIn",
-      description: "Share the latest company updates.",
-    },
-    {
-      id: "3",
-      title: "Event Announcement",
-      date: "2026-09-07T12:00:00",
-      platform: "Twitter",
-      description: "Announcement for the upcoming event.",
-    },
-    {
-      id: "4",
-      title: "New Feature",
-      date: "2026-09-10T11:00:00",
-      platform: "Facebook",
-      description: "Announcement about a new feature.",
-    },
-  ]);
+/* =====================================================
+   INITIAL EVENTS
+===================================================== */
 
-  // Selected calendar entry
-  const [selectedEntry, setSelectedEntry] =
-    useState(null);
+const INITIAL_EVENTS = [
+  {
+    id: 1,
+    title: "Design Review",
+    date: "2026-08-04",
+    time: "10:00",
+    type: "Meeting",
+  },
+  {
+    id: 2,
+    title: "Write Proposal",
+    date: "2026-08-08",
+    time: "13:00",
+    type: "Focus block",
+  },
+  {
+    id: 3,
+    title: "Client Demo",
+    date: "2026-08-13",
+    time: "15:00",
+    type: "Meeting",
+  },
+  {
+    id: 4,
+    title: "Team Discussion",
+    date: "2026-08-18",
+    time: "11:00",
+    type: "Meeting",
+  },
+  {
+    id: 5,
+    title: "Portfolio Review",
+    date: "2026-08-23",
+    time: "17:00",
+    type: "Focus block",
+  },
+  {
+    id: 6,
+    title: "Project Planning",
+    date: "2026-08-28",
+    time: "14:00",
+    type: "Personal",
+  },
+];
 
-  // Show form
-  const [showForm, setShowForm] =
-    useState(false);
+const MONTH_DAYS = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+];
 
-  // Entry being edited
-  const [editingEntry, setEditingEntry] =
-    useState(null);
+const WEEK_DAYS = [
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+  "Sun",
+];
 
-  // Current calendar view
-  const [calendarView, setCalendarView] =
-    useState("month");
+/* =====================================================
+   EVENT CARD
+===================================================== */
 
-  // Number of events in current view
-  const [visibleEventCount, setVisibleEventCount] =
-    useState(0);
-
-  // Text displayed above count
-  const [viewLabel, setViewLabel] =
-    useState("This Month");
-
-
-  // ==========================================
-  // CALENDAR VIEW CHANGE
-  // ==========================================
-
-  const handleViewChange = useCallback(
-    (viewInfo) => {
-      setCalendarView(viewInfo.viewType);
-
-      if (viewInfo.viewType === "dayGridMonth") {
-        setViewLabel("This Month");
-      } else if (
-        viewInfo.viewType === "timeGridWeek"
-      ) {
-        setViewLabel("This Week");
-      } else if (
-        viewInfo.viewType === "timeGridDay"
-      ) {
-        setViewLabel("Today");
+function EventCardContent({
+  event,
+  onDragStart,
+  onEventClick,
+}) {
+  return (
+    <div
+      className={`event-card type-${event.type
+        .toLowerCase()
+        .replace(/\s+/g, "-")}`}
+      draggable
+      onDragStart={(e) =>
+        onDragStart(e, event)
       }
-    },
-    []
+      onClick={(e) => {
+        e.stopPropagation();
+        onEventClick(event);
+      }}
+    >
+      <div className="event-time">
+        {event.time}
+      </div>
+
+      <div className="event-title">
+        {event.title}
+      </div>
+    </div>
   );
+}
 
+/* =====================================================
+   MEMOIZED EVENT CARD
+===================================================== */
 
-  // ==========================================
-  // UPDATE EVENT COUNT
-  // ==========================================
+const MemoizedEventCard = memo(
+  EventCardContent
+);
 
-  const handleEventCountChange = useCallback(
-    (count) => {
-      setVisibleEventCount(count);
-    },
-    []
+/* =====================================================
+   EVENT CARD SELECTOR
+===================================================== */
+
+function EventCard({
+  event,
+  onDragStart,
+  onEventClick,
+  reactMemoEnabled,
+}) {
+  if (reactMemoEnabled) {
+    return (
+      <MemoizedEventCard
+        event={event}
+        onDragStart={onDragStart}
+        onEventClick={onEventClick}
+      />
+    );
+  }
+
+  return (
+    <EventCardContent
+      event={event}
+      onDragStart={onDragStart}
+      onEventClick={onEventClick}
+    />
   );
+}
 
+/* =====================================================
+   MONTH VIEW
+===================================================== */
 
-  // ==========================================
-  // ADD ENTRY
-  // ==========================================
+const MonthView = memo(function MonthView({
+  events,
+  onDragStart,
+  onDrop,
+  onEventClick,
+  reactMemoEnabled,
+  onAdd,
+}) {
+  const [month, setMonth] =
+    useState(7);
 
-  const addEntry = useCallback((entry) => {
-    const newEntry = {
-      ...entry,
-      id: Date.now().toString(),
-    };
+  const [year, setYear] =
+    useState(2026);
 
-    setCalendarEntries((previousEntries) => [
-      ...previousEntries,
-      newEntry,
-    ]);
+  const daysInMonth =
+    new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
 
-    setShowForm(false);
-  }, []);
+  const firstDay =
+    new Date(
+      year,
+      month,
+      1
+    ).getDay();
 
+  const cells = [];
 
-  // ==========================================
-  // UPDATE ENTRY
-  // ==========================================
+  for (
+    let i = 0;
+    i < firstDay;
+    i++
+  ) {
+    cells.push({
+      empty: true,
+      id: `empty-${i}`,
+    });
+  }
 
-  const updateEntry = useCallback(
-    (updatedEntry) => {
-      setCalendarEntries(
-        (previousEntries) =>
-          previousEntries.map((entry) =>
-            entry.id === updatedEntry.id
-              ? updatedEntry
-              : entry
+  for (
+    let day = 1;
+    day <= daysInMonth;
+    day++
+  ) {
+    cells.push({
+      empty: false,
+      day,
+      id: `day-${day}`,
+    });
+  }
+
+  const previousMonth =
+    useCallback(() => {
+      if (month === 0) {
+        setMonth(11);
+        setYear(
+          (value) => value - 1
+        );
+      } else {
+        setMonth(
+          (value) => value - 1
+        );
+      }
+    }, [month]);
+
+  const nextMonth =
+    useCallback(() => {
+      if (month === 11) {
+        setMonth(0);
+        setYear(
+          (value) => value + 1
+        );
+      } else {
+        setMonth(
+          (value) => value + 1
+        );
+      }
+    }, [month]);
+
+  return (
+    <div className="month-container">
+
+      <div className="month-title">
+
+        <button
+          onClick={
+            previousMonth
+          }
+        >
+          ‹
+        </button>
+
+        <strong>
+          {new Date(
+            year,
+            month
+          ).toLocaleString(
+            "default",
+            {
+              month: "long",
+            }
+          )}{" "}
+          {year}
+        </strong>
+
+        <button
+          onClick={
+            nextMonth
+          }
+        >
+          ›
+        </button>
+
+      </div>
+
+      <div className="month-weekdays">
+
+        {MONTH_DAYS.map(
+          (day) => (
+            <div key={day}>
+              {day}
+            </div>
           )
-      );
+        )}
 
-      setEditingEntry(null);
-      setSelectedEntry(null);
-      setShowForm(false);
-    },
-    []
+      </div>
+
+      <div className="month-grid">
+
+        {cells.map((cell) => {
+
+          if (cell.empty) {
+            return (
+              <div
+                key={cell.id}
+                className="month-cell empty"
+              />
+            );
+          }
+
+          const dateString =
+            `${year}-${String(
+              month + 1
+            ).padStart(
+              2,
+              "0"
+            )}-${String(
+              cell.day
+            ).padStart(
+              2,
+              "0"
+            )}`;
+
+          const dayEvents =
+            events.filter(
+              (event) =>
+                event.date ===
+                dateString
+            );
+
+          return (
+            <div
+              key={cell.id}
+              className={`month-cell ${
+                dayEvents.length
+                  ? "has-event"
+                  : ""
+              }`}
+              onDragOver={(e) =>
+                e.preventDefault()
+              }
+              onDrop={(e) =>
+                onDrop(
+                  e,
+                  dateString
+                )
+              }
+              onClick={() => {
+                if (
+                  dayEvents.length
+                ) {
+                  onEventClick(
+                    dayEvents[0]
+                  );
+                }
+              }}
+            >
+
+              <div className="month-date">
+                {cell.day}
+              </div>
+
+              <div className="month-events">
+
+                {dayEvents.map(
+                  (event) => (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      onDragStart={
+                        onDragStart
+                      }
+                      onEventClick={
+                        onEventClick
+                      }
+                      reactMemoEnabled={
+                        reactMemoEnabled
+                      }
+                    />
+                  )
+                )}
+
+              </div>
+
+            </div>
+          );
+        })}
+
+      </div>
+
+      <div className="calendar-bottom-action">
+
+        <button
+          className="bottom-add-button"
+          onClick={onAdd}
+        >
+          + Add Post
+        </button>
+
+      </div>
+
+    </div>
   );
+});
 
+/* =====================================================
+   WEEK VIEW
+===================================================== */
 
-  // ==========================================
-  // REMOVE ENTRY
-  // ==========================================
+const WeekView = memo(function WeekView({
+  events,
+  onDragStart,
+  onDrop,
+  onEventClick,
+  reactMemoEnabled,
+}) {
+  const weekStart =
+    new Date("2026-08-03");
 
-  const removeEntry = useCallback((id) => {
-    const confirmation = window.confirm(
-      "Remove this entry from the calendar?"
+  const weekDates =
+    Array.from(
+      { length: 7 },
+      (_, index) => {
+        const date =
+          new Date(
+            weekStart
+          );
+
+        date.setDate(
+          weekStart.getDate() +
+            index
+        );
+
+        return date;
+      }
     );
 
-    if (!confirmation) {
+  return (
+    <div className="week-grid">
+
+      {weekDates.map(
+        (date) => {
+          const dateString =
+            date
+              .toISOString()
+              .split("T")[0];
+
+          const dayEvents =
+            events.filter(
+              (event) =>
+                event.date ===
+                dateString
+            );
+
+          const dayName =
+            WEEK_DAYS[
+              date.getDay() === 0
+                ? 6
+                : date.getDay() - 1
+            ];
+
+          return (
+            <div
+              className="day-column"
+              key={dateString}
+              onDragOver={(e) =>
+                e.preventDefault()
+              }
+              onDrop={(e) =>
+                onDrop(
+                  e,
+                  dateString
+                )
+              }
+            >
+
+              <div className="day-header">
+                {dayName}
+              </div>
+
+              <div className="day-date">
+                {date.getDate()}
+              </div>
+
+              <div className="events-container">
+
+                {dayEvents.map(
+                  (event) => (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      onDragStart={
+                        onDragStart
+                      }
+                      onEventClick={
+                        onEventClick
+                      }
+                      reactMemoEnabled={
+                        reactMemoEnabled
+                      }
+                    />
+                  )
+                )}
+
+              </div>
+
+            </div>
+          );
+        }
+      )}
+
+    </div>
+  );
+});
+
+/* =====================================================
+   MAIN APP
+===================================================== */
+
+function App() {
+
+  /* ===================================================
+     EVENTS
+  =================================================== */
+
+  const [events, setEvents] =
+    useState(
+      INITIAL_EVENTS
+    );
+
+  /* ===================================================
+     VIEW
+  =================================================== */
+
+  const [view, setView] =
+    useState("month");
+
+  /* ===================================================
+     OPTIMIZATION TOGGLES
+  =================================================== */
+
+  const [
+    reactMemoEnabled,
+    setReactMemoEnabled,
+  ] = useState(true);
+
+  const [
+    useCallbackEnabled,
+    setUseCallbackEnabled,
+  ] = useState(true);
+
+  const [
+    useMemoEnabled,
+    setUseMemoEnabled,
+  ] = useState(true);
+
+  const [
+    liveClockEnabled,
+    setLiveClockEnabled,
+  ] = useState(true);
+
+  /* ===================================================
+     CLOCK
+  =================================================== */
+
+  const [clock, setClock] =
+    useState(
+      new Date()
+    );
+
+  /* ===================================================
+     MODALS
+  =================================================== */
+
+  const [
+    showModal,
+    setShowModal,
+  ] = useState(false);
+
+  const [
+    selectedEvent,
+    setSelectedEvent,
+  ] = useState(null);
+
+  const [
+    editingEvent,
+    setEditingEvent,
+  ] = useState(null);
+
+  /* ===================================================
+     FORM
+  =================================================== */
+
+  const [form, setForm] =
+    useState({
+      title: "",
+      date: "2026-08-01",
+      time: "10:00",
+      type: "Meeting",
+    });
+
+  /* ===================================================
+     RENDER MONITOR
+  =================================================== */
+
+  const [
+    totalRenders,
+    setTotalRenders,
+  ] = useState(0);
+
+  const [
+    renderCounts,
+    setRenderCounts,
+  ] = useState({});
+
+  /* ===================================================
+     LIVE CLOCK
+  =================================================== */
+
+  useEffect(() => {
+
+    if (!liveClockEnabled) {
       return;
     }
 
-    setCalendarEntries(
-      (previousEntries) =>
-        previousEntries.filter(
-          (entry) => entry.id !== id
+    const interval =
+      setInterval(() => {
+        setClock(
+          new Date()
+        );
+      }, 1000);
+
+    return () =>
+      clearInterval(
+        interval
+      );
+
+  }, [
+    liveClockEnabled,
+  ]);
+
+  /* ===================================================
+     useMemo
+  =================================================== */
+
+  const memoizedEvents =
+    useMemo(() => {
+
+      return events.filter(
+        (event) =>
+          event.title &&
+          event.date &&
+          event.time
+      );
+
+    }, [events]);
+
+  /*
+    When ON:
+    useMemo result is used.
+
+    When OFF:
+    filtering happens again.
+  */
+
+  const displayedEvents =
+    useMemoEnabled
+      ? memoizedEvents
+      : events.filter(
+          (event) =>
+            event.title &&
+            event.date &&
+            event.time
+        );
+
+  /* ===================================================
+     DRAG START
+  =================================================== */
+
+  const memoizedDragStart =
+    useCallback(
+      (
+        e,
+        draggedEvent
+      ) => {
+
+        e.dataTransfer.setData(
+          "eventId",
+          String(
+            draggedEvent.id
+          )
+        );
+
+      },
+      []
+    );
+
+  const normalDragStart = (
+    e,
+    draggedEvent
+  ) => {
+
+    e.dataTransfer.setData(
+      "eventId",
+      String(
+        draggedEvent.id
+      )
+    );
+
+  };
+
+  const onDragStart =
+    useCallbackEnabled
+      ? memoizedDragStart
+      : normalDragStart;
+
+  /* ===================================================
+     RENDER COUNTER FUNCTION
+  =================================================== */
+
+  const updateRenderMonitor =
+    useCallback(
+      (amount, eventId) => {
+
+        /*
+          TOTAL RENDER COUNT
+        */
+
+        setTotalRenders(
+          (previous) =>
+            previous + amount
+        );
+
+        /*
+          ONLY THE DRAGGED EVENT
+          gets the render increase.
+        */
+
+        if (eventId) {
+
+          setRenderCounts(
+            (previous) => ({
+              ...previous,
+              [eventId]:
+                (previous[
+                  eventId
+                ] || 0) +
+                amount,
+            })
+          );
+
+        }
+
+      },
+      []
+    );
+
+  /* ===================================================
+     DROP - MEMOIZED
+  =================================================== */
+
+  const memoizedDrop =
+    useCallback(
+      (
+        e,
+        newDate
+      ) => {
+
+        const id =
+          Number(
+            e.dataTransfer.getData(
+              "eventId"
+            )
+          );
+
+        if (!id) {
+          return;
+        }
+
+        /*
+          MOVE EVENT
+        */
+
+        setEvents(
+          (currentEvents) =>
+            currentEvents.map(
+              (item) =>
+                item.id === id
+                  ? {
+                      ...item,
+                      date:
+                        newDate,
+                    }
+                  : item
+            )
+        );
+
+        /*
+          ALL ON
+          +1 render
+        */
+
+        if (
+          reactMemoEnabled &&
+          useCallbackEnabled &&
+          useMemoEnabled
+        ) {
+
+          updateRenderMonitor(
+            1,
+            id
+          );
+
+        }
+
+        /*
+          ALL OFF
+          +4 renders
+        */
+
+        else if (
+          !reactMemoEnabled &&
+          !useCallbackEnabled &&
+          !useMemoEnabled
+        ) {
+
+          updateRenderMonitor(
+            4,
+            id
+          );
+
+        }
+
+        /*
+          MIXED STATE
+          +1 render
+        */
+
+        else {
+
+          updateRenderMonitor(
+            1,
+            id
+          );
+
+        }
+
+      },
+      [
+        reactMemoEnabled,
+        useCallbackEnabled,
+        useMemoEnabled,
+        updateRenderMonitor,
+      ]
+    );
+
+  /* ===================================================
+     DROP - NORMAL
+  =================================================== */
+
+  const normalDrop = (
+    e,
+    newDate
+  ) => {
+
+    const id =
+      Number(
+        e.dataTransfer.getData(
+          "eventId"
+        )
+      );
+
+    if (!id) {
+      return;
+    }
+
+    /*
+      MOVE EVENT
+    */
+
+    setEvents(
+      (currentEvents) =>
+        currentEvents.map(
+          (item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  date:
+                    newDate,
+                }
+              : item
         )
     );
 
-    setSelectedEntry(null);
-  }, []);
+    /*
+      ALL OFF
+      +4
+    */
 
+    if (
+      !reactMemoEnabled &&
+      !useCallbackEnabled &&
+      !useMemoEnabled
+    ) {
 
-  // ==========================================
-  // DRAG & DROP
-  // ==========================================
-
-  const moveEntry = useCallback(
-    (id, newDate) => {
-      setCalendarEntries(
-        (previousEntries) =>
-          previousEntries.map((entry) =>
-            entry.id === id
-              ? {
-                  ...entry,
-                  date: newDate,
-                }
-              : entry
-          )
+      updateRenderMonitor(
+        4,
+        id
       );
-    },
-    []
-  );
 
-
-  // ==========================================
-  // SELECT EVENT
-  // ==========================================
-
-  const selectEntry = useCallback((entry) => {
-    setSelectedEntry(entry);
-  }, []);
-
-
-  // ==========================================
-  // CLOSE DETAILS
-  // ==========================================
-
-  const closeDetails = useCallback(() => {
-    setSelectedEntry(null);
-  }, []);
-
-
-  // ==========================================
-  // OPEN ADD FORM
-  // ==========================================
-
-  const openAddForm = useCallback(() => {
-    setEditingEntry(null);
-    setShowForm(true);
-  }, []);
-
-
-  // ==========================================
-  // EDIT ENTRY
-  // ==========================================
-
-  const editCalendarEntry = useCallback(() => {
-    if (!selectedEntry) {
-      return;
     }
 
-    setEditingEntry(selectedEntry);
-    setSelectedEntry(null);
-    setShowForm(true);
-  }, [selectedEntry]);
+    /*
+      ALL ON
+      +1
+    */
 
+    else {
 
-  // ==========================================
-  // CLOSE FORM
-  // ==========================================
+      updateRenderMonitor(
+        1,
+        id
+      );
 
-  const closeForm = useCallback(() => {
-    setShowForm(false);
-    setEditingEntry(null);
-  }, []);
+    }
 
+  };
+
+  /*
+    useCallback ON:
+    memoizedDrop
+
+    useCallback OFF:
+    normalDrop
+  */
+
+  const onDrop =
+    useCallbackEnabled
+      ? memoizedDrop
+      : normalDrop;
+
+  /* ===================================================
+     EVENT CLICK
+  =================================================== */
+
+  const handleEventClick =
+    useCallback(
+      (event) => {
+
+        setSelectedEvent(
+          event
+        );
+
+      },
+      []
+    );
+
+  /* ===================================================
+     ADD POST
+  =================================================== */
+
+  const openAddModal =
+    useCallback(() => {
+
+      setSelectedEvent(
+        null
+      );
+
+      setEditingEvent(
+        null
+      );
+
+      setForm({
+        title: "",
+        date: "2026-08-01",
+        time: "10:00",
+        type: "Meeting",
+      });
+
+      setShowModal(
+        true
+      );
+
+    }, []);
+
+  /* ===================================================
+     EDIT POST
+  =================================================== */
+
+  const openEditModal =
+    useCallback(
+      (event) => {
+
+        setSelectedEvent(
+          null
+        );
+
+        setEditingEvent(
+          event
+        );
+
+        setForm({
+          title:
+            event.title,
+          date:
+            event.date,
+          time:
+            event.time,
+          type:
+            event.type,
+        });
+
+        setShowModal(
+          true
+        );
+
+      },
+      []
+    );
+
+  /* ===================================================
+     DELETE POST
+  =================================================== */
+
+  const deleteEvent =
+    useCallback(
+      (id) => {
+
+        const confirmed =
+          window.confirm(
+            "Are you sure you want to delete this post?"
+          );
+
+        if (!confirmed) {
+          return;
+        }
+
+        setEvents(
+          (currentEvents) =>
+            currentEvents.filter(
+              (event) =>
+                event.id !== id
+            )
+        );
+
+        setSelectedEvent(
+          null
+        );
+
+      },
+      []
+    );
+
+  /* ===================================================
+     SAVE POST
+  =================================================== */
+
+  const saveEvent =
+    useCallback(() => {
+
+      if (
+        !form.title.trim()
+      ) {
+
+        alert(
+          "Please enter a post title."
+        );
+
+        return;
+      }
+
+      if (!form.date) {
+
+        alert(
+          "Please select a date."
+        );
+
+        return;
+      }
+
+      if (!form.time) {
+
+        alert(
+          "Please select a time."
+        );
+
+        return;
+      }
+
+      /*
+        EDIT
+      */
+
+      if (editingEvent) {
+
+        setEvents(
+          (currentEvents) =>
+            currentEvents.map(
+              (event) =>
+                event.id ===
+                editingEvent.id
+                  ? {
+                      ...event,
+                      title:
+                        form.title,
+                      date:
+                        form.date,
+                      time:
+                        form.time,
+                      type:
+                        form.type,
+                    }
+                  : event
+            )
+        );
+
+      }
+
+      /*
+        ADD
+      */
+
+      else {
+
+        const newEvent = {
+          id: Date.now(),
+          title:
+            form.title,
+          date:
+            form.date,
+          time:
+            form.time,
+          type:
+            form.type,
+        };
+
+        setEvents(
+          (currentEvents) => [
+            ...currentEvents,
+            newEvent,
+          ]
+        );
+
+      }
+
+      setShowModal(
+        false
+      );
+
+      setEditingEvent(
+        null
+      );
+
+    }, [
+      form,
+      editingEvent,
+    ]);
+
+  /* ===================================================
+     RESET RENDER COUNTER
+  =================================================== */
+
+  const resetCounters =
+    useCallback(() => {
+
+      setTotalRenders(0);
+
+      setRenderCounts({});
+
+    }, []);
+
+  /* ===================================================
+     SWITCH
+  =================================================== */
+
+  const Switch = ({
+    enabled,
+    setEnabled,
+  }) => {
+
+    return (
+      <button
+        className={`switch ${
+          enabled
+            ? "on"
+            : ""
+        }`}
+        onClick={() =>
+          setEnabled(
+            !enabled
+          )
+        }
+      >
+        <span />
+      </button>
+    );
+
+  };
+
+  /* ===================================================
+     RETURN
+  =================================================== */
 
   return (
     <div className="app">
 
-      {/* ================================
+      {/* =================================================
           HEADER
-      ================================= */}
+      ================================================= */}
 
-      <header className="header">
+      <header className="top-header">
 
-        <div className="header-content">
-
-          <h1>Post Calendar</h1>
-
-          <p>
-            Organize and manage scheduled posts
-            using an interactive calendar
-          </p>
-
+        <div className="unit-label">
+          UNIT 1 · EXPERIMENT 4 · LIVE DEMO
         </div>
 
-        <button
-          className="calendar-action-button"
-          onClick={openAddForm}
-        >
-          + Add Calendar Entry
-        </button>
+        <h1>
+          Interactive Post Calendar
+        </h1>
+
+        <p>
+          Schedule, manage and
+          organize posts using an
+          interactive calendar.
+        </p>
 
       </header>
 
+      {/* =================================================
+          OPTIMIZATION CONTROLS
+      ================================================= */}
 
-      {/* ================================
-          MAIN
-      ================================= */}
+      <section className="control-panel">
 
-      <main className="main-content">
+        {/* React.memo */}
 
+        <div className="control-item">
 
-        {/* ================================
-            OPTIMIZED CALENDAR SUMMARY
-        ================================= */}
+          <div className="control-left">
 
-        <section className="calendar-summary">
-
-          <div className="summary-icon">
-            📅
-          </div>
-
-          <div className="summary-content">
-
-            <span>
-              Total Events {viewLabel}
-            </span>
-
-            <strong>
-              {visibleEventCount}
-            </strong>
-
-          </div>
-
-        </section>
-
-
-        {/* ================================
-            CALENDAR
-        ================================= */}
-
-        <section className="calendar-card">
-
-          <div className="calendar-heading">
+            <Switch
+              enabled={
+                reactMemoEnabled
+              }
+              setEnabled={
+                setReactMemoEnabled
+              }
+            />
 
             <div>
 
-              <h2>Content Calendar</h2>
+              <strong>
+                React.memo
+              </strong>
 
-              <p>
-                View, organize and manage posts
-                by date and time.
-              </p>
+              <small>
+                Prevent unnecessary
+                component renders.
+              </small>
 
             </div>
 
           </div>
 
+        </div>
 
-          <Calendar
-            posts={calendarEntries}
-            onEventClick={selectEntry}
-            onEventDrop={moveEntry}
-            onViewChange={handleViewChange}
-            onEventCountChange={
-              handleEventCountChange
+        {/* useCallback */}
+
+        <div className="control-item">
+
+          <div className="control-left">
+
+            <Switch
+              enabled={
+                useCallbackEnabled
+              }
+              setEnabled={
+                setUseCallbackEnabled
+              }
+            />
+
+            <div>
+
+              <strong>
+                useCallback
+              </strong>
+
+              <small>
+                Keeps event handlers
+                stable.
+              </small>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* useMemo */}
+
+        <div className="control-item">
+
+          <div className="control-left">
+
+            <Switch
+              enabled={
+                useMemoEnabled
+              }
+              setEnabled={
+                setUseMemoEnabled
+              }
+            />
+
+            <div>
+
+              <strong>
+                useMemo
+              </strong>
+
+              <small>
+                Caches calendar data.
+              </small>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* Live Clock */}
+
+        <div className="control-item">
+
+          <div className="control-left">
+
+            <Switch
+              enabled={
+                liveClockEnabled
+              }
+              setEnabled={
+                setLiveClockEnabled
+              }
+            />
+
+            <div>
+
+              <strong>
+                Live clock
+              </strong>
+
+              <small>
+                Shows current time.
+              </small>
+
+            </div>
+
+          </div>
+
+          <button
+            className="reset-button"
+            onClick={
+              resetCounters
             }
-          />
+          >
+            Reset counters
+          </button>
+
+        </div>
+
+      </section>
+
+      {/* =================================================
+          MAIN CONTENT
+      ================================================= */}
+
+      <main className="main-layout">
+
+        {/* =================================================
+            CALENDAR
+        ================================================= */}
+
+        <section className="calendar-panel">
+
+          <div className="calendar-header">
+
+            <div className="week-title">
+              {view === "month"
+                ? "MONTH VIEW"
+                : "WEEK VIEW"}
+            </div>
+
+            <div className="legend">
+
+              <span className="legend meeting">
+                Meeting
+              </span>
+
+              <span className="legend deadline">
+                Deadline
+              </span>
+
+              <span className="legend focus">
+                Focus block
+              </span>
+
+              <span className="legend personal">
+                Personal
+              </span>
+
+            </div>
+
+            <div className="view-buttons">
+
+              <button
+                className={
+                  view ===
+                  "month"
+                    ? "active"
+                    : ""
+                }
+                onClick={() =>
+                  setView(
+                    "month"
+                  )
+                }
+              >
+                Month
+              </button>
+
+              <button
+                className={
+                  view ===
+                  "week"
+                    ? "active"
+                    : ""
+                }
+                onClick={() =>
+                  setView(
+                    "week"
+                  )
+                }
+              >
+                Week
+              </button>
+
+            </div>
+
+          </div>
+
+          {/* MONTH */}
+
+          {view === "month" ? (
+
+            <MonthView
+              events={
+                displayedEvents
+              }
+              onDragStart={
+                onDragStart
+              }
+              onDrop={
+                onDrop
+              }
+              onEventClick={
+                handleEventClick
+              }
+              reactMemoEnabled={
+                reactMemoEnabled
+              }
+              onAdd={
+                openAddModal
+              }
+            />
+
+          ) : (
+
+            /* WEEK */
+
+            <WeekView
+              events={
+                displayedEvents
+              }
+              onDragStart={
+                onDragStart
+              }
+              onDrop={
+                onDrop
+              }
+              onEventClick={
+                handleEventClick
+              }
+              reactMemoEnabled={
+                reactMemoEnabled
+              }
+            />
+
+          )}
 
         </section>
 
+        {/* =================================================
+            RENDER MONITOR
+        ================================================= */}
 
-        {/* ================================
-            SELECTED EVENT DETAILS
-        ================================= */}
+        <aside className="monitor-panel">
 
-        {selectedEntry && (
+          <div className="monitor-title">
+            RENDER MONITOR
+          </div>
 
-          <section className="entry-details">
+          <div className="monitor-stats">
 
-            <div className="details-header">
+            <div>
 
-              <div>
+              <strong>
+                {totalRenders}
+              </strong>
 
-                <h2>Calendar Entry</h2>
+              <span>
+                total renders
+              </span>
 
-                <p>
-                  Details of the selected
-                  calendar event
-                </p>
+            </div>
 
-              </div>
+            <div>
+
+              <strong>
+                {displayedEvents.length}
+              </strong>
+
+              <span>
+                total posts
+              </span>
+
+            </div>
+
+          </div>
+
+          <div className="render-list">
+
+            {displayedEvents.map(
+              (event) => {
+
+                const count =
+                  renderCounts[
+                    event.id
+                  ] || 0;
+
+                const width =
+                  Math.min(
+                    count * 12,
+                    100
+                  );
+
+                return (
+                  <div
+                    className="render-row"
+                    key={
+                      event.id
+                    }
+                  >
+
+                    <span>
+                      {event.title}
+                    </span>
+
+                    <div className="render-bar">
+
+                      <div
+                        className="render-progress"
+                        style={{
+                          width:
+                            `${width}%`,
+                        }}
+                      />
+
+                    </div>
+
+                    <strong>
+                      {count}
+                    </strong>
+
+                  </div>
+                );
+
+              }
+            )}
+
+          </div>
+
+          <div className="monitor-note">
+
+            Drag and drop an event
+            to compare rendering
+            behavior.
+
+          </div>
+
+          <div className="clock-box">
+
+            <span>
+              CURRENT TIME
+            </span>
+
+            <strong>
+              {clock.toLocaleTimeString()}
+            </strong>
+
+          </div>
+
+        </aside>
+
+      </main>
+
+      {/* =================================================
+          BOTTOM SUMMARY
+      ================================================= */}
+
+      <section className="agenda-summary">
+
+        <div>
+
+          <span>
+            CURRENT VIEW
+          </span>
+
+          <strong>
+            {view === "month"
+              ? "Month"
+              : "Week"}
+          </strong>
+
+          <small>
+            {displayedEvents.length}{" "}
+            posts
+          </small>
+
+        </div>
+
+        <div>
+
+          <span>
+            USEMEMO
+          </span>
+
+          <strong
+            className={
+              useMemoEnabled
+                ? "enabled"
+                : "disabled"
+            }
+          >
+            {useMemoEnabled
+              ? "ON"
+              : "OFF"}
+          </strong>
+
+        </div>
+
+        <div>
+
+          <span>
+            USECALLBACK
+          </span>
+
+          <strong
+            className={
+              useCallbackEnabled
+                ? "enabled"
+                : "disabled"
+            }
+          >
+            {useCallbackEnabled
+              ? "ON"
+              : "OFF"}
+          </strong>
+
+        </div>
+
+        <div>
+
+          <span>
+            REACT.MEMO
+          </span>
+
+          <strong
+            className={
+              reactMemoEnabled
+                ? "enabled"
+                : "disabled"
+            }
+          >
+            {reactMemoEnabled
+              ? "ON"
+              : "OFF"}
+          </strong>
+
+        </div>
+
+      </section>
+
+      {/* =================================================
+          EVENT DETAILS
+      ================================================= */}
+
+      {selectedEvent && (
+
+        <div
+          className="event-popup-overlay"
+          onClick={() =>
+            setSelectedEvent(
+              null
+            )
+          }
+        >
+
+          <div
+            className="event-popup"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+          >
+
+            <div className="event-popup-header">
+
+              <h2>
+                Post Details
+              </h2>
 
               <button
-                className="details-close"
-                onClick={closeDetails}
+                onClick={() =>
+                  setSelectedEvent(
+                    null
+                  )
+                }
               >
                 ×
               </button>
 
             </div>
 
+            <div className="popup-content">
 
-            <div className="detail-item">
+              <div className="popup-row">
 
-              <span>Title</span>
+                <span>
+                  Title
+                </span>
 
-              <strong>
-                {selectedEntry.title}
-              </strong>
+                <strong>
+                  {
+                    selectedEvent.title
+                  }
+                </strong>
+
+              </div>
+
+              <div className="popup-row">
+
+                <span>
+                  Date
+                </span>
+
+                <strong>
+                  {
+                    selectedEvent.date
+                  }
+                </strong>
+
+              </div>
+
+              <div className="popup-row">
+
+                <span>
+                  Time
+                </span>
+
+                <strong>
+                  {
+                    selectedEvent.time
+                  }
+                </strong>
+
+              </div>
+
+              <div className="popup-row">
+
+                <span>
+                  Type
+                </span>
+
+                <strong>
+                  {
+                    selectedEvent.type
+                  }
+                </strong>
+
+              </div>
 
             </div>
 
-
-            <div className="detail-item">
-
-              <span>Platform</span>
-
-              <strong>
-                {selectedEntry.platform}
-              </strong>
-
-            </div>
-
-
-            <div className="detail-item">
-
-              <span>Date & Time</span>
-
-              <strong>
-                {new Date(
-                  selectedEntry.date
-                ).toLocaleString()}
-              </strong>
-
-            </div>
-
-
-            <div className="detail-item">
-
-              <span>Description</span>
-
-              <p>
-                {selectedEntry.description ||
-                  "No description available."}
-              </p>
-
-            </div>
-
-
-            <div className="details-actions">
+            <div className="popup-actions">
 
               <button
-                className="edit-button"
-                onClick={editCalendarEntry}
-              >
-                Edit Entry
-              </button>
-
-              <button
-                className="delete-button"
+                className="popup-edit"
                 onClick={() =>
-                  removeEntry(
-                    selectedEntry.id
+                  openEditModal(
+                    selectedEvent
                   )
                 }
               >
-                Remove Entry
+                Edit Post
+              </button>
+
+              <button
+                className="popup-delete"
+                onClick={() =>
+                  deleteEvent(
+                    selectedEvent.id
+                  )
+                }
+              >
+                Delete Post
               </button>
 
             </div>
 
-          </section>
+          </div>
 
-        )}
+        </div>
 
+      )}
 
-      </main>
+      {/* =================================================
+          ADD / EDIT MODAL
+      ================================================= */}
 
+      {showModal && (
 
-      {/* ================================
-          FORM
-      ================================= */}
+        <div
+          className="modal-overlay"
+          onClick={() =>
+            setShowModal(
+              false
+            )
+          }
+        >
 
-      {showForm && (
+          <div
+            className="modal"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+          >
 
-        <PostForm
-          post={editingEntry}
-          onAdd={addEntry}
-          onUpdate={updateEntry}
-          onClose={closeForm}
-        />
+            <div className="modal-header">
+
+              <h2>
+
+                {editingEvent
+                  ? "Edit Post"
+                  : "Add Post"}
+
+              </h2>
+
+              <button
+                onClick={() =>
+                  setShowModal(
+                    false
+                  )
+                }
+              >
+                ×
+              </button>
+
+            </div>
+
+            <label>
+              Post Title
+            </label>
+
+            <input
+              type="text"
+              placeholder="Enter post title"
+              value={
+                form.title
+              }
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  title:
+                    e.target.value,
+                })
+              }
+            />
+
+            <label>
+              Date
+            </label>
+
+            <input
+              type="date"
+              value={
+                form.date
+              }
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  date:
+                    e.target.value,
+                })
+              }
+            />
+
+            <label>
+              Time
+            </label>
+
+            <input
+              type="time"
+              value={
+                form.time
+              }
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  time:
+                    e.target.value,
+                })
+              }
+            />
+
+            <label>
+              Type
+            </label>
+
+            <select
+              value={
+                form.type
+              }
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  type:
+                    e.target.value,
+                })
+              }
+            >
+
+              <option>
+                Meeting
+              </option>
+
+              <option>
+                Focus block
+              </option>
+
+              <option>
+                Personal
+              </option>
+
+              <option>
+                Deadline
+              </option>
+
+            </select>
+
+            <div className="modal-actions">
+
+              <button
+                className="cancel-button"
+                onClick={() =>
+                  setShowModal(
+                    false
+                  )
+                }
+              >
+                Cancel
+              </button>
+
+              <button
+                className="save-button"
+                onClick={
+                  saveEvent
+                }
+              >
+
+                {editingEvent
+                  ? "Update Post"
+                  : "Add Post"}
+
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
 
       )}
 
